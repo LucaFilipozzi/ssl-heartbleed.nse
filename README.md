@@ -1,2 +1,1 @@
-ssl-heartbleed.nse
-==================
+# ssl-heartbleed.nse
