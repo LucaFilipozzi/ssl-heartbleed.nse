@@ -1,30 +1,29 @@
 description = [[
-Detects whether a server is vulnerable to the OpenSSL Heartbleed bug (CVE-2014-0160).
-The code is based on the Python script ssltest.py authored by Jared Stafford (jspenguin@jspenguin.org)
+Detects whether a host is vulnerable to the OpenSSL Heartbleed bug (CVE-2014-0160).
 ]]
 
 ---
 -- @usage
--- nmap -p 443 --script ssl-heartbleed <target>
+-- nmap -p 443 --script my-ssl-heartbleed-detect <target>
 --
 -- @output
 -- PORT    STATE SERVICE
 -- 443/tcp open  https
--- | ssl-heartbleed:
+-- | my-ssl-heartbleed-detect:
 -- |   VULNERABLE:
--- |   The Heartbleed Bug is a serious vulnerability in the popular OpenSSL cryptographic software library. It allows for stealing information intended to be protected by SSL/TLS encryption.
+-- |   CVE-2014-0160 OpenSSL Heartbleed Bug
 -- |     State: VULNERABLE
+-- |     IDs:  CVE:CVE-2014-0160
 -- |     Risk factor: High
 -- |     Description:
--- |       OpenSSL versions 1.0.1 and 1.0.2-beta releases (including 1.0.1f and 1.0.2-beta1) of OpenSSL are affected by the Heartbleed bug. The bug allows for reading memory of systems protected by the vulnerable OpenSSL versions and could allow for disclosure of otherwise encrypted confidential information as well as the encryption keys themselves.
--- |
+-- |       A missing bounds check in the handling of the TLS heartbeat extension
+-- |       can be used to reveal process memory to a connected client or server.
 -- |     References:
--- |       https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2014-0160
--- |       http://www.openssl.org/news/secadv_20140407.txt
--- |_      http://cvedetails.com/cve/2014-0160/
+-- |       http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2014-0160
+-- |       http://cvedetails.com/cve/2014-0160/
+-- |_      http://www.openssl.org/news/secadv_20140407.txt
 --
---
--- @args ssl-heartbleed.protocols (default tries all) TLS 1.0, TLS 1.1, or TLS 1.2
+-- @args my-ssl-heartbleed-detect.protocols (default tries all) TLS 1.0, TLS 1.1, or TLS 1.2
 --
 
 local bin = require('bin')
@@ -39,11 +38,19 @@ local vulns = require('vulns')
 local have_tls, tls = pcall(require,'tls')
 assert(have_tls, "This script requires the tls.lua library from http://nmap.org/nsedoc/lib/tls.html")
 
-author = "Patrik Karlsson <patrik@cqure.net>"
+author = "Patrik Karlsson, Luca Filipozzi"
 license = "Same as Nmap--See http://nmap.org/book/man-legal.html"
 categories = { "vuln", "safe" }
 
-local arg_protocols = stdnse.get_script_args(SCRIPT_NAME .. ".protocols") or {'TLSv1.0', 'TLSv1.1', 'TLSv1.2'}
+-- process script arguments
+local protocols = stdnse.get_script_args(SCRIPT_NAME .. ".protocols") or {'TLSv1.0', 'TLSv1.1', 'TLSv1.2'}
+if type(protocols) == 'string' then
+  protocols = { protocols }
+end
+for _, ver in ipairs(protocols) do
+  local valid_protocol = (tls.PROTOCOLS[ver] ~= nil)
+  assert(valid_protocol, "Unsupported protocol version: " .. ver)
+end
 
 portrule = function(host, port)
   return shortport.ssl(host, port) or sslcert.isPortSupported(port)
@@ -213,31 +220,25 @@ end
 
 action = function(host, port)
   local vuln_table = {
-    title = "The Heartbleed Bug is a serious vulnerability in the popular OpenSSL cryptographic software library. It allows for stealing information intended to be protected by SSL/TLS encryption.",
+    title = "CVE-2014-0160 OpenSSL Heartbleed Bug",
     state = vulns.STATE.NOT_VULN,
+    IDS = {
+      CVE = 'CVE-2014-0160',
+    },
     risk_factor = "High",
     description = [[
-OpenSSL versions 1.0.1 and 1.0.2-beta releases (including 1.0.1f and 1.0.2-beta1) of OpenSSL are affected by the Heartbleed bug. The bug allows for reading memory of systems protected by the vulnerable OpenSSL versions and could allow for disclosure of otherwise encrypted confidential information as well as the encryption keys themselves.
-    ]],
-
+A missing bounds check in the handling of the TLS heartbeat extension
+can be used to reveal process memory to a connected client or server.]],
     references = {
-      'https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2014-0160',
+      'http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2014-0160',
       'http://www.openssl.org/news/secadv_20140407.txt ',
       'http://cvedetails.com/cve/2014-0160/'
     }
   }
 
   local report = vulns.Report:new(SCRIPT_NAME, host, port)
-  local test_vers = arg_protocols
 
-  if type(test_vers) == 'string' then
-    test_vers = { test_vers }
-  end
-
-  for _, ver in ipairs(test_vers) do
-    if nil == tls.PROTOCOLS[ver] then
-      return "\n  Unsupported protocol version: " .. ver
-    end
+  for _, ver in ipairs(protocols) do
     local status = testversion(host, port, ver)
     if ( status ) then
       vuln_table.state = vulns.STATE.VULN
@@ -247,3 +248,5 @@ OpenSSL versions 1.0.1 and 1.0.2-beta releases (including 1.0.1f and 1.0.2-beta1
 
   return report:make_output(vuln_table)
 end
+
+-- vim: set ft=lua ts=2 sw=2 et ai sm:
